@@ -1,0 +1,285 @@
+<!-- views/index.ejs -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KTP Digital Service</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary: #2563eb;
+            --secondary: #3b82f6;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --background: #f8fafc;
+            --text: #1e293b;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+        }
+
+        body {
+            background: var(--background);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            color: var(--primary);
+            margin-bottom: 0.5rem;
+            font-weight: 700;
+        }
+
+        .dashboard {
+            display: grid;
+            gap: 2rem;
+            grid-template-columns: 1fr 3fr;
+        }
+
+        .sidebar {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            height: fit-content;
+        }
+
+        .main-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .application-form {
+            display: grid;
+            gap: 1rem;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        input, textarea, select {
+            padding: 0.75rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            transition: border-color 0.2s;
+        }
+
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.1s, opacity 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: var(--secondary);
+            color: white;
+        }
+
+        .btn:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+
+        .applicant-card {
+            padding: 1.5rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.75rem;
+            margin-bottom: 1rem;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .applicant-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 999px;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .status-pending { background: #fef3c7; color: #d97706; }
+        .status-verified { background: #d1fae5; color: #059669; }
+        .status-revision { background: #fee2e2; color: #dc2626; }
+
+        .timeline {
+            font-size: 0.875rem;
+            color: #64748b;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        @media (max-width: 768px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📄 Digital KTP Services</h1>
+            <p>Digital identity management system</p>
+        </div>
+
+        <% if (successMessage) { %>
+            <div class="success-message">
+              <i class="fas fa-check-circle"></i> <%= successMessage %>
+            </div>
+          <% } %>
+          
+          <% if (errorMessage) { %>
+            <div class="error-message">
+              <i class="fas fa-exclamation-circle"></i> <%= errorMessage %>
+            </div>
+          <% } %>
+
+        <div class="dashboard">
+            <aside class="sidebar">
+                <h2>New Application</h2>
+                <form class="application-form" action="/submit" method="POST">
+                    <div class="form-group">
+                        <label>Full Name</label>
+                        <input type="text" name="name" placeholder="John Doe" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Address</label>
+                        <textarea name="address" rows="3" required></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Region</label>
+                        <input type="text" name="region" placeholder="District/City" required>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-paper-plane"></i> Submit Application
+                    </button>
+                </form>
+            </aside>
+
+            <main class="main-content">
+                <div class="toolbar">
+                    <div class="action-buttons">
+                    <a href="/?sort=region" class="btn btn-secondary <%= currentSort === 'region' ? 'active' : '' %>">
+                        <i class="fas fa-sort-alpha-down"></i> Sort by Region
+                    </a>
+                    <a href="/?sort=submission_time" class="btn btn-secondary <%= currentSort === 'submission_time' ? 'active' : '' %>">
+                        <i class="fas fa-clock"></i> Sort by Time
+                    </a>
+                    <form action="/process" method="POST" style="margin-left: auto;">
+                        <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-check-circle"></i> Verify Next
+                        </button>
+                    </form>
+                    </div>
+                </div>
+
+                <div class="applicant-list" style="margin-top: 2rem;">
+                    <% queue.forEach(applicant => { %>
+                        <div class="applicant-card">
+                            <div style="display: flex; justify-content: space-between; align-items: start;">
+                                <div>
+                                    <h3 style="margin-bottom: 0.5rem;"><%= applicant.name %></h3>
+                                    <div class="timeline">
+                                        <i class="fas fa-clock"></i> 
+                                        <%= applicant.formatted_time %>
+                                    </div>
+                                    <div style="margin-top: 0.5rem;">
+                                        <span class="status-badge status-<%= applicant.status %>">
+                                            <%= applicant.status %>
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="applicant-info">
+                                    <div><strong>ID:</strong> <%= applicant.id %></div>
+                                    <div><strong>Region:</strong> <%= applicant.region %></div>
+                                </div>
+                            </div>
+
+                            <form class="application-form" action="/edit/<%= applicant.id %>" method="POST" style="margin-top: 1.5rem;">
+                                <div class="form-group">
+                                    <label>Full Name</label>
+                                    <input type="text" name="name" value="<%= applicant.name %>">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label>Address</label>
+                                    <textarea name="address" rows="2"><%= applicant.address %></textarea>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label>Region</label>
+                                    <input type="text" name="region" value="<%= applicant.region %>">
+                                </div>
+                                
+                                <div class="action-buttons">
+                                    <button type="submit" class="btn btn-secondary">
+                                        <i class="fas fa-save"></i> Update
+                                    </button>
+                                    <a href="/undo/<%= applicant.id %>" class="btn btn-secondary">
+                                        <i class="fas fa-undo"></i> Undo
+                                    </a>
+                                </div>
+                            </form>
+                        </div>
+                    <% }); %>
+                </div>
+            </main>
+        </div>
+    </div>
+</body>
+</html>
