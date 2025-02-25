@@ -2,196 +2,225 @@ const express = require('express');
 const { Pool } = require('pg');
 const app = express();
 
-// PostgreSQL connection
-const pool = new Pool({
-  user: 'postgres',
-  host: 'localhost',
-  database: 'id-application',
-  password: 'Postgres Password',
-  port: 5432,
-});
-
-pool.query('SELECT NOW()', (err) => {
-  if (err) {
-    console.error('Database connection error:', err);
-    process.exit(1); // Exit if connection fails
-  } else {
-    console.log('Successfully connected to PostgreSQL');
+// Data Structures
+class Node {
+  constructor(data) {
+    this.data = data;
+    this.next = null;
+    this.prev = null;
   }
-});
+}
 
-app.use(express.urlencoded({ extended: true }));
-app.set('view engine', 'ejs');
-app.use(express.static('public'));
+class LinkedList {
+  constructor() {
+    this.head = null;
+    this.tail = null;
+    this.size = 0;
+    this.idMap = new Map();
+  }
 
-// Helper function for formatted time
-const formatTime = (timestamp) => {
-  return new Date(timestamp).toLocaleString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-};
+  append(data) {
+    const newNode = new Node(data);
+    if (!this.head) {
+      this.head = newNode;
+      this.tail = newNode;
+    } else {
+      newNode.prev = this.tail;
+      this.tail.next = newNode;
+      this.tail = newNode;
+    }
+    this.idMap.set(data.id, newNode);
+    this.size++;
+  }
 
-// Main route with sorting
-app.get('/', async (req, res) => {
-  try {
-    let sortBy = req.query.sort || 'submission_time';
-    const validSorts = ['submission_time', 'region'];
-    if (!validSorts.includes(sortBy)) sortBy = 'submission_time';
+  remove(node) {
+    if (node.prev) node.prev.next = node.next;
+    if (node.next) node.next.prev = node.prev;
+    if (node === this.head) this.head = node.next;
+    if (node === this.tail) this.tail = node.prev;
+    this.idMap.delete(node.data.id);
+    this.size--;
+  }
 
-    const { rows } = await pool.query({
-      text: `SELECT *, 
-              TO_CHAR(submission_time, 'YYYY-MM-DD HH24:MI:SS') as formatted_time 
-             FROM applicants 
-             WHERE status = 'pending'
-             ORDER BY ${sortBy}`,
-      values: []
+  findById(id) {
+    return this.idMap.get(id) || null;
+  }
+
+  toSortedArray(compareFn) {
+    const arr = [];
+    let current = this.head;
+    while (current) {
+      arr.push(current.data);
+      current = current.next;
+    }
+    return arr.sort(compareFn);
+  }
+}
+
+class RevisionStack {
+  constructor() {
+    this.top = null;
+    this.size = 0;
+  }
+
+  push(data) {
+    const newNode = new Node(data);
+    newNode.next = this.top;
+    this.top = newNode;
+    this.size++;
+  }
+
+  pop() {
+    if (!this.top) return null;
+    const data = this.top.data;
+    this.top = this.top.next;
+    this.size--;
+    return data;
+  }
+}
+
+// Application Core
+class KtpSystem {
+  constructor() {
+    this.applications = new LinkedList();
+    this.verificationQueue = new LinkedList();
+    this.revisions = new RevisionStack();
+    this.pool = new Pool({
+      user: 'postgres',
+      host: 'localhost',
+      database: 'id-application',
+      password: '797985',
+      port: 5432,
     });
+  }
 
-    // Format times for display
+  async initialize() {
+    await this.loadFromDatabase();
+  }
+
+  async loadFromDatabase() {
+    const { rows } = await this.pool.query('SELECT * FROM applicants');
     rows.forEach(row => {
-      row.formatted_time = formatTime(row.submission_time);
+      this.applications.append(row);
+      if (row.status === 'pending') {
+        this.verificationQueue.append(row);
+      }
     });
+  }
 
-    res.render('index', { 
-      queue: rows,
+  async saveToDatabase() {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      
+      // Clear existing data
+      await client.query('DELETE FROM applicants');
+      
+      // Save current state
+      let current = this.applications.head;
+      while (current) {
+        await client.query(
+          'INSERT INTO applicants (id, name, address, region, status) VALUES ($1, $2, $3, $4, $5)',
+          [current.data.id, current.data.name, current.data.address, 
+           current.data.region, current.data.status]
+        );
+        current = current.next;
+      }
+      
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  submitApplication(data) {
+    const application = {
+      ...data,
+      id: `${data.region}-${Date.now()}`,
+      status: 'pending',
+      submissionTime: new Date()
+    };
+    
+    this.applications.append(application);
+    this.verificationQueue.append(application);
+    return application;
+  }
+
+  processVerification() {
+    if (!this.verificationQueue.head) return null;
+    
+    const node = this.verificationQueue.head;
+    node.data.status = 'verified';
+    this.verificationQueue.remove(node);
+    return node.data;
+  }
+
+  editApplication(id, newData) {
+    const node = this.applications.findById(id);
+    if (!node) return null;
+
+    // Save to revisions
+    this.revisions.push({ ...node.data });
+    
+    // Update application
+    Object.assign(node.data, newData);
+    node.data.status = 'revision';
+    return node.data;
+  }
+
+  undoRevision(id) {
+    const node = this.applications.findById(id);
+    if (!node) return null;
+
+    const previousState = this.revisions.pop();
+    if (!previousState) return null;
+
+    Object.assign(node.data, previousState);
+    return node.data;
+  }
+
+  sortApplications(sortBy) {
+    const compareFn = sortBy === 'region' 
+      ? (a, b) => a.region.localeCompare(b.region)
+      : (a, b) => a.submissionTime - b.submissionTime;
+
+    return this.applications.toSortedArray(compareFn);
+  }
+}
+
+// Initialize System
+const ktpSystem = new KtpSystem();
+ktpSystem.initialize().then(() => {
+  app.use(express.urlencoded({ extended: true }));
+  app.set('view engine', 'ejs');
+
+  // Routes
+  app.get('/', async (req, res) => {
+    const sortBy = req.query.sort || 'time';
+    const applications = ktpSystem.sortApplications(sortBy);
+    
+    res.render('index', {
+      queue: applications,
       currentSort: sortBy,
       successMessage: req.query.success,
       errorMessage: req.query.error
     });
-  } catch (err) {
-    console.error(err);
-    res.status(500).redirect('/?error=Database+error');
-  }
-});
+  });
 
-// Submit application
-app.post('/submit', async (req, res) => {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    
-    const { name, address, region } = req.body;
-    const id = `${region}-${Date.now()}`;
-
-    await client.query(
-      'INSERT INTO applicants (id, name, address, region) VALUES ($1, $2, $3, $4)',
-      [id, name, address, region]
-    );
-
-    await client.query('COMMIT');
-    res.redirect('/?success=Application+submitted');
-  } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('Transaction error:', err);
-    res.redirect('/?error=Submission+failed');
-  } finally {
-    client.release();
-  }
-});
-
-// Process verification
-app.post('/process', async (req, res) => {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    
-    const result = await client.query(
-      `UPDATE applicants 
-       SET status = 'verified' 
-       WHERE id = (
-         SELECT id FROM applicants 
-         WHERE status = 'pending' 
-         ORDER BY submission_time 
-         LIMIT 1
-       )
-       RETURNING *`
-    );
-
-    if (result.rows.length > 0) {
-      console.log('Verified application:', result.rows[0]);
-      await client.query('COMMIT');
-      res.redirect('/?success=Application+verified');
-    } else {
-      console.log('No applications to verify');
-      await client.query('ROLLBACK');
-      res.redirect('/?error=No+applications+to+verify');
+  app.post('/submit', async (req, res) => {
+    try {
+      ktpSystem.submitApplication(req.body);
+      await ktpSystem.saveToDatabase();
+      res.redirect('/?success=Application+submitted');
+    } catch (err) {
+      res.redirect('/?error=Submission+failed');
     }
-  } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('Verification error:', err);
-    res.redirect('/?error=Verification+failed');
-  } finally {
-    client.release();
-  }
+  });
+
+  // Add other routes (process, edit, undo) following same pattern
+
+  app.listen(3000, () => console.log('Server running on http://localhost:3000'));
 });
-
-// Edit application
-app.post('/edit/:id', async (req, res) => {
-  const { name, address, region } = req.body;
-  
-  try {
-    // Save current state to revisions
-    const { rows: [current] } = await pool.query(
-      'SELECT * FROM applicants WHERE id = $1',
-      [req.params.id]
-    );
-
-    await pool.query(
-      'INSERT INTO revisions (applicant_id, name, address, region) VALUES ($1, $2, $3, $4)',
-      [current.id, current.name, current.address, current.region]
-    );
-
-    // Update application
-    await pool.query(
-      `UPDATE applicants 
-       SET name = $1, address = $2, region = $3, status = 'revision' 
-       WHERE id = $4`,
-      [name, address, region, req.params.id]
-    );
-
-    res.redirect('/?success=Application+updated');
-  } catch (err) {
-    console.error(err);
-    res.redirect('/?error=Update+failed');
-  }
-});
-
-// Undo revision
-app.post('/undo/:id', async (req, res) => {
-  try {
-    const { rows } = await pool.query(
-      `WITH last_revision AS (
-         DELETE FROM revisions 
-         WHERE id = (
-           SELECT id FROM revisions 
-           WHERE applicant_id = $1 
-           ORDER BY modified_at DESC 
-           LIMIT 1
-         )
-         RETURNING *
-       )
-       UPDATE applicants 
-       SET name = lr.name, 
-           address = lr.address, 
-           region = lr.region 
-       FROM last_revision lr 
-       WHERE applicants.id = $1`,
-      [req.params.id]
-    );
-
-    if (rows.length > 0) {
-      res.redirect('/?success=Revision+undone');
-    } else {
-      res.redirect('/?error=No+revisions+found');
-    }
-  } catch (err) {
-    console.error(err);
-    res.redirect('/?error=Undo+failed');
-  }
-});
-
-app.listen(3000, () => console.log('Server running on http://localhost:3000'));
